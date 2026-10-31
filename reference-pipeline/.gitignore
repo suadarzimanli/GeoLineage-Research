@@ -1,0 +1,18 @@
+# GeoLineage
+outputs/
+lineage_runs/
+validation_outputs/
+validation_lineage_runs/
+experiment_d_outputs/
+experiment_d_lineage_runs/
+incremental_experiment_outputs/
+incremental_experiment_lineage_runs/
+*.parquet
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/

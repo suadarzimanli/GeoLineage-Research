@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "geo-lineage"
+version = "0.1.0"
+description = "Provenance-first cloud-native GeoETL: STAC → GeoParquet with lineage and diff."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "GeoLineage" }]
+keywords = ["gis", "stac", "geoparquet", "provenance", "lineage", "reproducibility"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: GIS",
+]
+dependencies = [
+    "pystac>=1.10.0",
+    "pystac-client>=0.7.0",
+    "geopandas>=0.14.0",
+    "pyarrow>=14.0.0",
+    "shapely>=2.0.0",
+    "streamlit>=1.28.0",
+    "typer>=0.9.0",
+    "requests>=2.31.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ingest*", "transform*", "lineage*"]
+exclude = ["demo*", "scripts*", "docs*"]
+
+[tool.setuptools.package-dir]
+"" = "."

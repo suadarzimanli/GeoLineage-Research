@@ -147,6 +147,7 @@ export function Admin() {
             {busy ? "Checking…" : "Sign in"}
           </button>
         </form>
+        <AdminFooterNote />
       </div>
     );
   }
@@ -258,6 +259,21 @@ export function Admin() {
           </tbody>
         </table>
       </div>
+
+      <AdminFooterNote />
     </div>
+  );
+}
+
+function AdminFooterNote() {
+  return (
+    <p className="muted" style={{ marginTop: "2rem", fontSize: "0.9rem", maxWidth: "40rem" }}>
+      This page is for operators only (run cleanup, soft limits, keepalive)—not part of the public
+      search demo. Maintainer:{" "}
+      <a href="https://github.com/suadarzimanli" target="_blank" rel="noreferrer">
+        github.com/suadarzimanli
+      </a>
+      .
+    </p>
   );
 }

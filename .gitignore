@@ -4,6 +4,16 @@ node_modules/
 venv/
 __pycache__/
 
+# Reference-pipeline run artifacts (regenerable)
+reference-pipeline/outputs/
+reference-pipeline/lineage_runs/
+reference-pipeline/validation_outputs/
+reference-pipeline/validation_lineage_runs/
+reference-pipeline/experiment_d_outputs/
+reference-pipeline/experiment_d_lineage_runs/
+reference-pipeline/incremental_experiment_outputs/
+reference-pipeline/incremental_experiment_lineage_runs/
+
 # Secrets / local env
 .env
 .env.*

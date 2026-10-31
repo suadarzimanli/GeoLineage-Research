@@ -1,0 +1,8 @@
+# Public hosted demo (Cloudflare Pages + Worker)
+https://geolineage-research.pages.dev/
+https://geolineage-api.suad-arzimanli.workers.dev/
+
+# Source repository
+https://github.com/suadarzimanli/GeoLineage-Research
+
+# Framing: working paper + open demo — not peer-reviewed / not published.

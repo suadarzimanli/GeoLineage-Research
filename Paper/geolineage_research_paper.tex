@@ -242,7 +242,7 @@ GeoLineage & 3 & 1 & 3 \\
 
 \textbf{Expected behaviour.} First run: new output and lineage; second: reuse message and new lineage pointing at the first path/checksum.
 
-\textbf{Result.} In repeated runs, the second run reuses whenever the catalog returns the same five items. \textbf{Conclusion:} RQ3 supported under the assumption.
+\textbf{Result.} In repeated runs, the second run reuses whenever the catalog returns the same five items. \textbf{Conclusion:} RQ3 demonstrated under the assumption (self-test of Definition~1).
 
 \subsection{Experiment B: Different \texttt{max\_items} (Diff)}
 \textbf{Objective.} Verify new output and correct diff when \texttt{max\_items} increases (5$\rightarrow$10).
@@ -253,7 +253,7 @@ GeoLineage & 3 & 1 & 3 \\
 
 \textbf{Expected behaviour.} New product; lineage with 10 inputs; Added~$\geq 1$, Unchanged~$\leq 5$, Removed~$=0$.
 
-\textbf{Result.} Diff shows e.g.\ Added~5, Removed~0, Unchanged~5. \textbf{Conclusion:} RQ2 supported.
+\textbf{Result.} Diff shows e.g.\ Added~5, Removed~0, Unchanged~5. \textbf{Conclusion:} RQ2 demonstrated for this parameter change.
 
 \subsection{Experiment C: Cross-Catalog Generality}
 \textbf{Objective.} Same pipeline logic and schema across catalogs.
@@ -325,14 +325,14 @@ Align lineage with STAC lineage/DAG proposals and PROV; multi-step DAGs with dep
 Knowing which upstream assets and parameters produced a layer matters for GeoAI and digital twins---evaluation, auditing, and rollback. GeoLineage offers a minimal pattern to make STAC inputs and GeoParquet outputs traceable without requiring an external lineage platform for this pipeline class.
 
 \section{Conclusion}
-GeoLineage is a minimal, provenance-first GeoETL: every run produces a machine-readable lineage record; ``diff since last run'' reports added, removed, and unchanged inputs; and when the input set is unchanged, the pipeline reuses the previous output (minimum recompute). It is catalog-agnostic and has been run against two STAC sources. The experiments and automated validation suite show that behaviour matches the design.
+GeoLineage is a minimal, provenance-first GeoETL: every run produces a machine-readable lineage record; ``diff since last run'' reports added, removed, and unchanged inputs; and when the input set is unchanged, the pipeline reuses the previous output (minimum recompute). It is catalog-agnostic and has been run against two STAC sources. Under the conditions tested, the experiments and automated validation suite are \emph{consistent with} the design (they verify the implementation against its own definitions; they are not a comparative evaluation against PROV/OpenLineage/DVC baselines).
 
-\textbf{RQ1} is supported: lineage holds full query parameters and concrete inputs. \textbf{RQ2} is supported by diff correctness under parameter change. \textbf{RQ3} is supported by reuse behaviour with an audit trail via \texttt{reused\_from\_run\_id}.
+\textbf{RQ1} is demonstrated for this pipeline: lineage holds full query parameters and concrete inputs. \textbf{RQ2} is demonstrated by diff correctness under the parameter-change experiments reported here. \textbf{RQ3} is demonstrated by reuse behaviour with an audit trail via \texttt{reused\_from\_run\_id}. We treat these as systems-demo results, not as journal-scale claims of general superiority.
 
-The code is open and runnable as a reference for practitioners and a base for multi-step pipelines or standard lineage formats---aligned with calls for explicit provenance, versioning, and minimal metadata~\cite{cannata2025,nuest2018,nuest2020,closa2019,closa2021,gonzalez2024,thompson2023}.
+The code is open and runnable as a reference for practitioners and a base for multi-step pipelines or standard lineage formats---aligned with calls for explicit provenance, versioning, and minimal metadata~\cite{cannata2025,nuest2018,nuest2020,closa2019,closa2021,gonzalez2024,thompson2023}. This document is a \textbf{working paper} accompanying an open demo; it is not a peer-reviewed publication.
 
 \paragraph{Code availability.}
-Source code, validation scripts (validation suite, reproducibility check, Experiment~D stress test, lineage evaluation, incremental recompute), and documentation accompany this work. Experiments reported here can be reproduced with those scripts; see Appendix~\ref{app:run}.
+Source code ships in two trees that share the same receipt contract: (i)~a thin hosted GeoJSON demo (\texttt{GeoLineageApp/}) and (ii)~the GeoParquet reference CLI plus validation scripts (\texttt{reference-pipeline/}). Experiments reported here (validation suite, reproducibility check, Experiment~D stress test, lineage evaluation, incremental recompute) are grounded in \texttt{reference-pipeline/}; see Appendix~\ref{app:run} and the repository file \texttt{REPRODUCIBILITY.md}.
 
 \appendix
 \section{Example Lineage JSON (Minimal)}
@@ -366,8 +366,9 @@ Source code, validation scripts (validation suite, reproducibility check, Experi
 
 \section{How to Run Validation}
 \label{app:run}
-From the project root (\texttt{geo-lineage/}):
+From the repository's reference tree (\texttt{reference-pipeline/}), not from the hosted Cloudflare demo:
 \begin{lstlisting}[basicstyle=\ttfamily\footnotesize]
+cd reference-pipeline
 python -m venv .venv
 # Windows: .venv\Scripts\pip install -r requirements.txt
 # Run validation suite
