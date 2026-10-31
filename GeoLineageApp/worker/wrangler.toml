@@ -1,0 +1,21 @@
+name = "geolineage-api"
+main = "src/index.ts"
+compatibility_date = "2025-03-01"
+
+# Set secrets / vars:
+#   wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+#   wrangler secret put SUPABASE_URL
+# Optional production CORS lock (comma-separated). Empty = permissive (local).
+#   ALLOWED_ORIGINS = "https://geolineage.pages.dev,http://127.0.0.1:5173"
+
+[vars]
+DEFAULT_CATALOG_URL = "https://earth-search.aws.element84.com/v1"
+DEFAULT_COLLECTION = "sentinel-2-c1-l2a"
+# Soft free-tier caps (leave headroom under CF ~100k req/day and Supabase free storage/DB)
+MAX_RUNS = "400"
+MAX_REQUESTS_PER_DAY = "80000"
+KEEPALIVE_MAX_AGE_HOURS = "72"
+
+# Daily job: ping Supabase if last write older than 3 days; check soft limits
+[triggers]
+crons = ["0 12 * * *"]

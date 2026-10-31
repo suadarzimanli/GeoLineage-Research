@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+worker/.dev.vars
+web/.env
+supabase/.env.local
+UsernamePassword.txt
+*.log
+.DS_Store

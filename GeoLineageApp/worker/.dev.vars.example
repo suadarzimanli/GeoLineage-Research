@@ -1,0 +1,7 @@
+SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
+
+# Admin panel (/admin) — keep these as Wrangler secrets in production
+ADMIN_USERNAME=MainAdmin
+ADMIN_PASSWORD=change-me
+ADMIN_SESSION_SECRET=long-random-string
