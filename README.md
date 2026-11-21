@@ -1,5 +1,7 @@
 # GeoLineage
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24428985.svg)](https://doi.org/10.5281/zenodo.24428985)
+
 **Provenance for STAC-driven geospatial pipelines** — a lineage receipt for every run, a diff against the previous run of the *same query* with reasons for every change, and reuse of unchanged outputs.
 
 **Status:** working paper + open hosted demo + open code.
