@@ -36,12 +36,14 @@ export function About() {
             download.
           </li>
           <li>
-            Reuse when nothing changed. Run the same kind of search again and, if the scene set and
-            checksum line up with an earlier run, the old output is reused instead of writing a
-            duplicate.
+            Reuse when nothing changed. Run exactly the same search again (same area, collection,
+            dates and number of scenes) and, if the scenes and their content are unchanged, the
+            earlier output is reused before anything is rebuilt.
           </li>
           <li>
-            A rough diff against the previous similar run: which scene ids showed up or dropped out.
+            A comparison with the previous run of the same search: scenes added, removed or changed
+            in place, and for each removed scene whether it is still in the catalog (it only fell
+            out of the first results) or gone.
           </li>
         </ul>
       </section>
@@ -49,9 +51,11 @@ export function About() {
       <section className="panel stack">
         <h2 style={{ margin: 0 }}>How a run goes</h2>
         <ol className="about-list">
-          <li>Choose a place—type a name, draw a box, or grab a preset—and pick a collection.</li>
+          <li>Choose a place—type a name, draw a box, or grab a preset—pick a collection and, if you
+            like, a fixed date range (fixed past dates give repeatable results).</li>
           <li>Hit run. The app queries Earth Search (public Element84 STAC catalog).</li>
-          <li>The result page shows footprints, a JSON receipt, and sometimes a diff.</li>
+          <li>The result page shows footprints, a JSON receipt, and what changed since the last run of
+            the same search (or says it is the first one).</li>
           <li>History keeps the list so you can open an old run again.</li>
         </ol>
         <p className="muted" style={{ margin: 0 }}>
