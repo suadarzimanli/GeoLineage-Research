@@ -2,7 +2,7 @@ r"""
 Reproducibility check: run pipeline twice with same params and verify output checksums match.
 Then run with different max_items and verify diff reflects the change.
 
-Usage (from geo-lineage folder):
+Usage (from the reference-pipeline folder):
   .venv\Scripts\python.exe -m scripts.reproducibility_check
   or: python -m scripts.reproducibility_check --bbox -122.5 37.5 -122.2 37.8
 """
@@ -52,12 +52,16 @@ def main():
     # Experiment B: different max_items
     print("\nExperiment B: Increase max_items (5 -> 10)")
     run3, id3, _ = run_pipeline(bbox=bbox, catalog_url="https://earth-search.aws.element84.com/v1", collection="sentinel-2-c1-l2a", max_items=10, output_dir=OUTPUTS_DIR, lineage_dir=LINEAGE_DIR)
-    from lineage.diff import diff_since_last_run
-    diff = diff_since_last_run(run3, LINEAGE_DIR)
-    print("  Previous run:", diff.previous_run_id)
-    print("  Added inputs:", len(diff.added), "| Removed:", len(diff.removed), "| Unchanged:", len(diff.unchanged))
-    if len(diff.added) >= 0 and diff.previous_run_id:
-        print("  PASS: Diff reflects change in input set (more items requested -> added >= 0).")
+    from lineage.diff import diff_runs, diff_since_last_run
+    auto = diff_since_last_run(run3, LINEAGE_DIR)
+    print("  A different max_items is a different query; previous run of this query:", auto.previous_run_id)
+    diff = diff_runs(run2, run3)  # explicit comparison with the 5-item run
+    print("  Explicit diff vs the 5-item run -> added:", len(diff.added), "| removed:", len(diff.removed),
+          "| changed:", len(diff.changed), "| unchanged:", len(diff.unchanged))
+    if len(diff.unchanged) == len(run2.input_assets) and not diff.removed:
+        print("  PASS: with a fixed sort order, the first 5 items are kept and only new items are added.")
+    else:
+        print("  NOTE: the first 5 items changed between runs (catalog updated in between).")
 
     print("\n=== Done ===")
 

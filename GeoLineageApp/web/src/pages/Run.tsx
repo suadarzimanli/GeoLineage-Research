@@ -26,6 +26,8 @@ export function Run() {
   const [maxItems, setMaxItems] = useState(10);
   const [maxItemsText, setMaxItemsText] = useState("10");
   const [collection, setCollection] = useState(DEFAULT_COLLECTION);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [drawMode, setDrawMode] = useState(false);
@@ -143,6 +145,11 @@ export function Run() {
       setError(err);
       return;
     }
+    if (dateFrom && dateTo && dateFrom > dateTo) {
+      setError("The start date is after the end date.");
+      return;
+    }
+    const datetime = dateFrom || dateTo ? `${dateFrom || ".."}/${dateTo || ".."}` : undefined;
     const items = clampMaxItems(maxItemsText, 10);
     setMaxItems(items);
     setMaxItemsText(String(items));
@@ -153,6 +160,7 @@ export function Run() {
         bbox,
         max_items: items,
         collection,
+        ...(datetime ? { datetime } : {}),
       });
       navigate(`/runs/${result.run.id}`, { state: result });
     } catch (err) {
@@ -298,6 +306,14 @@ export function Run() {
             />
           </label>
           <label>
+            From date (optional)
+            <input type="date" value={dateFrom} max={dateTo || undefined} onChange={(e) => setDateFrom(e.target.value)} />
+          </label>
+          <label>
+            To date (optional)
+            <input type="date" value={dateTo} min={dateFrom || undefined} onChange={(e) => setDateTo(e.target.value)} />
+          </label>
+          <label>
             Collection
             <select value={collection} onChange={(e) => setCollection(e.target.value)}>
               {EARTH_SEARCH_COLLECTIONS.map((c) => (
@@ -317,7 +333,9 @@ export function Run() {
           </button>
         </div>
         <p className="muted" style={{ margin: 0 }}>
-          Catalog is Earth Search. The Worker saves the run in Supabase.
+          Without dates you get the newest scenes, which change as new ones are published. With a
+          fixed past period the result stays the same, so repeating the run reuses its output.
+          Each run is compared only with earlier runs of exactly the same search. Catalog: Earth Search.
         </p>
       </form>
     </div>

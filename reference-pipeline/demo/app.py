@@ -4,7 +4,7 @@ Streamlit demo: run pipeline for a bbox, view lineage and diff since last run.
 You MUST start it with:   streamlit run demo/app.py
 Not with:                python demo/app.py
 
-From geo-lineage folder (no venv activation):
+From the reference-pipeline folder (no venv activation):
   .venv\Scripts\streamlit.exe run demo/app.py
 Or double-click: run_demo.bat
 """

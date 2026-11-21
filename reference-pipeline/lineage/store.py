@@ -115,3 +115,46 @@ def get_previous_run_id(run_id: str, lineage_dir: Path | None = None) -> str | N
         return None
     i = ids.index(run_id)
     return ids[i - 1] if i > 0 else None
+
+
+def run_query_key(run: LineageRun) -> str:
+    """The run's query key; computed from its search parameters for receipts that predate the key."""
+    from .identity import DEFAULT_SORTBY, query_key
+
+    sp = run.search_params or {}
+    if sp.get("query_key"):
+        return str(sp["query_key"])
+    return query_key(
+        run.catalog_url,
+        str(sp.get("collection", "")),
+        sp.get("bbox") or [0, 0, 0, 0],
+        sp.get("datetime"),
+        int(sp.get("max_items", 0) or 0),
+        sp["sortby"] if "sortby" in sp else [],  # older runs used the catalog's default order
+    )
+
+
+def get_previous_run_for_query(
+    run_id: str | None, query: str, lineage_dir: Path | None = None
+) -> str | None:
+    """
+    Most recent run of the same query before `run_id` (or the latest of that query when run_id is
+    None). Runs of other queries are never "previous": a diff only makes sense for the same question.
+    """
+    lineage_dir = lineage_dir or DEFAULT_LINEAGE_DIR
+    runs_dir = lineage_dir / "runs"
+    if not runs_dir.exists():
+        return None
+    same = []
+    for p in runs_dir.glob("*.json"):
+        run = LineageRun.from_json(p.read_text(encoding="utf-8"))
+        if run_query_key(run) == query:
+            same.append((run.timestamp, run.run_id))
+    same.sort()
+    ids = [r for _, r in same]
+    if run_id is None:
+        return ids[-1] if ids else None
+    if run_id not in ids:
+        return ids[-1] if ids else None
+    i = ids.index(run_id)
+    return ids[i - 1] if i > 0 else None

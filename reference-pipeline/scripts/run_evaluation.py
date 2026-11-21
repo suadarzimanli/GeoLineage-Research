@@ -2,7 +2,7 @@ r"""
 Run evaluation: lineage completeness (can we answer "what produced this?" for every output?)
 and optional summary of where to get other metrics.
 
-Usage (from geo-lineage folder):
+Usage (from the reference-pipeline folder):
   python -m scripts.run_evaluation
   python -m scripts.run_evaluation --lineage-dir lineage_runs
 """

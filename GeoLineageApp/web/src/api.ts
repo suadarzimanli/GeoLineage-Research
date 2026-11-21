@@ -47,12 +47,19 @@ export interface RunSummary {
   output_checksum?: string | null;
   reused_from_run_id?: string | null;
   status: string;
+  search_params?: { query_key?: string; matched?: number | null; datetime?: string | null } | null;
 }
 
+/** Comparison with the previous run of the *same query* (same area, collection, dates, limit, order). */
 export interface Diff {
   added: string[];
   removed: string[];
+  /** same scene id, different content (metadata or files changed in place) */
+  changed?: string[];
   unchanged: string[];
+  /** why a scene is no longer listed: still in the catalog but outside the first N, or gone */
+  removed_reason?: Record<string, "outside_window" | "gone" | "unknown">;
+  compared_with_run_id?: string;
 }
 
 export interface CreateRunResult {

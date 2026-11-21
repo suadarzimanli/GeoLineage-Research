@@ -14,6 +14,12 @@ function safeHttpsUrl(href: string | null | undefined): string | null {
   }
 }
 
+const REASON_LABEL: Record<string, string> = {
+  outside_window: "still in the catalog, now outside the first results",
+  gone: "no longer in the catalog",
+  unknown: "could not check the catalog",
+};
+
 function downloadText(filename: string, text: string, mime: string) {
   const blob = new Blob([text], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -145,45 +151,68 @@ export function RunDetail() {
         <FootprintMap footprints={footprints} bbox={run.bbox} />
       </div>
 
-      {diff && (
-        <div className="panel">
-          <h2 style={{ marginTop: 0 }}>Compared with the previous similar run</h2>
-          <p className="muted">
-            Added {diff.added.length}, removed {diff.removed.length}, unchanged {diff.unchanged.length}
+      <div className="panel">
+        <h2 style={{ marginTop: 0 }}>What changed since the last run of this search</h2>
+        {!diff ? (
+          <p className="muted" style={{ margin: 0 }}>
+            This is the first run of this exact search (same area, collection, dates and number of
+            scenes), so there is nothing to compare with yet. Runs of other searches are never used.
           </p>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Change</th>
-                  <th>Scene id</th>
-                </tr>
-              </thead>
-              <tbody>
-                {diff.added.map((x) => (
-                  <tr key={`a-${x}`}>
-                    <td>added</td>
-                    <td className="mono">{x}</td>
-                  </tr>
-                ))}
-                {diff.removed.map((x) => (
-                  <tr key={`r-${x}`}>
-                    <td>removed</td>
-                    <td className="mono">{x}</td>
-                  </tr>
-                ))}
-                {!diff.added.length && !diff.removed.length && (
+        ) : (
+          <>
+            <p className="muted">
+              Compared with run{" "}
+              {diff.compared_with_run_id ? (
+                <Link to={`/runs/${diff.compared_with_run_id}`}>{diff.compared_with_run_id.slice(0, 8)}…</Link>
+              ) : (
+                "before"
+              )}
+              : {diff.added.length} added, {diff.removed.length} removed, {(diff.changed ?? []).length} changed,{" "}
+              {diff.unchanged.length} unchanged.
+            </p>
+            <div className="table-wrap">
+              <table>
+                <thead>
                   <tr>
-                    <td colSpan={2} className="muted">
-                      Same scene ids as before.
-                    </td>
+                    <th>Change</th>
+                    <th>Scene id</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+                </thead>
+                <tbody>
+                  {diff.added.map((x) => (
+                    <tr key={`a-${x}`}>
+                      <td>added</td>
+                      <td className="mono">{x}</td>
+                    </tr>
+                  ))}
+                  {(diff.changed ?? []).map((x) => (
+                    <tr key={`c-${x}`}>
+                      <td>changed — same id, new content</td>
+                      <td className="mono">{x}</td>
+                    </tr>
+                  ))}
+                  {diff.removed.map((x) => (
+                    <tr key={`r-${x}`}>
+                      <td>
+                        removed
+                        {diff.removed_reason?.[x] ? ` — ${REASON_LABEL[diff.removed_reason[x]] ?? diff.removed_reason[x]}` : ""}
+                      </td>
+                      <td className="mono">{x}</td>
+                    </tr>
+                  ))}
+                  {!diff.added.length && !diff.removed.length && !(diff.changed ?? []).length && (
+                    <tr>
+                      <td colSpan={2} className="muted">
+                        Same scenes with the same content as before.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </div>
 
       <div className="panel stack">
         <h2 style={{ marginTop: 0 }}>Receipt (JSON)</h2>
@@ -212,7 +241,12 @@ export function RunDetail() {
             </li>
             <li>
               <code>reused_from_run_id</code> means this run pointed at an earlier output instead of
-              writing new bytes. The scene diff above is separate—it is not inside the receipt file.
+              writing new bytes. <code>compared_with_run_id</code> and <code>diff</code> record the
+              comparison above; <code>search_params.query_key</code> identifies the exact search.
+            </li>
+            <li>
+              Each input has a <code>content_hash</code> of its metadata and file links: the same id
+              with a new hash means the catalog changed that scene in place.
             </li>
             <li>
               <code>lineage_dag</code> is a tiny graph of that pipeline for this demo (not a full

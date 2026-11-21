@@ -6,6 +6,13 @@ interface Props {
   bbox?: number[] | null;
 }
 
+function featureId(feature: GeoJSON.Feature): string {
+  const fromProps = feature.properties?.id;
+  if (typeof fromProps === "string" && fromProps) return fromProps;
+  if (typeof feature.id === "string" || typeof feature.id === "number") return String(feature.id);
+  return "scene";
+}
+
 export function FootprintMap({ footprints, bbox }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -37,6 +44,8 @@ export function FootprintMap({ footprints, bbox }: Props) {
     });
 
     const layers: L.Layer[] = [];
+
+    // Search window: dashed outline, almost no fill — distinct from scene footprints.
     if (bbox && bbox.length === 4) {
       const [w, s, e, n] = bbox;
       const rect = L.rectangle(
@@ -44,15 +53,46 @@ export function FootprintMap({ footprints, bbox }: Props) {
           [s, w],
           [n, e],
         ],
-        { color: "#0b3d2e", weight: 2, fillOpacity: 0.05 }
+        {
+          color: "#b45309",
+          weight: 2.5,
+          dashArray: "6 4",
+          fillColor: "#b45309",
+          fillOpacity: 0.04,
+        }
       );
+      rect.bindTooltip("Search box (query bbox)", { sticky: true });
       rect.addTo(map);
       layers.push(rect);
     }
 
+    // Scene footprints: light fill + clear borders; click/hover shows scene id.
     if (footprints?.features?.length) {
       const gj = L.geoJSON(footprints as GeoJSON.GeoJsonObject, {
-        style: { color: "#1f6f54", weight: 2, fillColor: "#1f6f54", fillOpacity: 0.25 },
+        style: {
+          color: "#1f6f54",
+          weight: 2,
+          fillColor: "#1f6f54",
+          fillOpacity: 0.06,
+        },
+        onEachFeature(feature, layer) {
+          const id = featureId(feature as GeoJSON.Feature);
+          layer.bindTooltip(id, { sticky: true, direction: "top" });
+          layer.bindPopup(
+            `<div style="font:12px/1.4 system-ui,sans-serif"><strong>Scene</strong><br/><code style="word-break:break-all">${id}</code></div>`
+          );
+          layer.on({
+            mouseover(e) {
+              const target = e.target as L.Path;
+              target.setStyle({ weight: 3, fillOpacity: 0.14 });
+              target.bringToFront();
+            },
+            mouseout(e) {
+              const target = e.target as L.Path;
+              gj.resetStyle(target);
+            },
+          });
+        },
       });
       gj.addTo(map);
       layers.push(gj);
@@ -64,5 +104,17 @@ export function FootprintMap({ footprints, bbox }: Props) {
     }
   }, [footprints, bbox]);
 
-  return <div className="map" ref={ref} />;
+  const sceneCount = footprints?.features?.length ?? 0;
+
+  return (
+    <div>
+      <div className="map" ref={ref} />
+      <p className="map-legend muted">
+        <span className="map-legend-item map-legend-bbox">Search box</span>
+        <span className="map-legend-item map-legend-scene">
+          Scene footprints{sceneCount ? ` (${sceneCount})` : ""} — click for id
+        </span>
+      </p>
+    </div>
+  );
 }

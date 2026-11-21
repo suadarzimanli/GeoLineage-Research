@@ -2,8 +2,25 @@
  * Thin GeoLineage API for Cloudflare Workers Free.
  * - Proxy STAC search (CORS + keep CPU light; network wait does not count as CPU)
  * - Persist runs / receipts / GeoJSON footprints to Supabase
- * - Diff + minimum-recompute (reuse prior output when input ids match)
+ * - Diff + minimum recompute with the identity rules in ./lineage.ts (same contract as the Python
+ *   reference pipeline): a run is compared with, and may reuse, only the previous run of the same
+ *   query; inputs are the same when ids and content hashes match; reuse is decided before building.
  */
+
+import {
+  ALLOWED_COLLECTIONS,
+  DEFAULT_SORTBY,
+  diffInputs,
+  isIdentical,
+  itemContentHash,
+  normalizeDatetime,
+  queryKey,
+  receiptInputs,
+  runQueryKey,
+  sceneKey,
+  type InputDiff,
+  type RemovedReason,
+} from "./lineage.ts";
 
 export interface Env {
   SUPABASE_URL: string;
@@ -55,6 +72,28 @@ interface StacItem {
   geometry?: GeoJSON.Geometry | null;
   properties?: Record<string, unknown>;
   links?: { rel: string; href: string }[];
+  content_hash: string;
+  scene_key: string;
+  updated: string | null;
+}
+
+interface SearchResult {
+  items: StacItem[];
+  matched: number | null;
+}
+
+interface StoredRun {
+  id: string;
+  created_at: string;
+  catalog_url: string;
+  collection: string;
+  bbox: number[];
+  max_items: number;
+  output_path?: string | null;
+  output_checksum?: string | null;
+  reused_from_run_id?: string | null;
+  status: string;
+  search_params?: Record<string, unknown> | null;
 }
 
 class HttpError extends Error {
@@ -146,8 +185,8 @@ function assertBbox(raw: unknown): BBox {
 
 function sanitizeCollection(raw: unknown, fallback: string): string {
   const value = (typeof raw === "string" && raw.trim() ? raw.trim() : fallback).slice(0, 128);
-  if (!/^[A-Za-z0-9._-]+$/.test(value)) {
-    throw new HttpError(400, "collection must be alphanumeric with ._- only");
+  if (!ALLOWED_COLLECTIONS.includes(value)) {
+    throw new HttpError(400, `collection must be one of: ${ALLOWED_COLLECTIONS.join(", ")}`);
   }
   return value;
 }
@@ -177,7 +216,11 @@ function sanitizeDatetime(raw: unknown): string | null {
   if (typeof raw !== "string" || raw.length > 64) {
     throw new HttpError(400, "datetime must be a short STAC interval string");
   }
-  return raw;
+  try {
+    return normalizeDatetime(raw); // catalogs need RFC 3339; equal intervals give equal query keys
+  } catch (e) {
+    throw new HttpError(400, `datetime: ${(e as Error).message}`);
+  }
 }
 
 function validateSearchBody(body: SearchBody, env: Env): ValidatedSearch {
@@ -260,10 +303,11 @@ function resolveFootprintsFetchUrl(
   return publicStorageUrl(env, footprintsObjectPath(runId));
 }
 
-function stripStacItem(raw: unknown): StacItem | null {
+async function stripStacItem(raw: unknown): Promise<StacItem | null> {
   if (!raw || typeof raw !== "object") return null;
   const item = raw as Record<string, unknown>;
   if (typeof item.id !== "string" || !item.id) return null;
+  const content_hash = await itemContentHash(item); // before stripping: what downstream could depend on
   const props = (item.properties && typeof item.properties === "object"
     ? item.properties
     : {}) as Record<string, unknown>;
@@ -279,14 +323,18 @@ function stripStacItem(raw: unknown): StacItem | null {
       start_datetime: props.start_datetime ?? null,
     },
     links: self?.href ? [{ rel: "self", href: String(self.href).slice(0, 2048) }] : [],
+    content_hash,
+    scene_key: sceneKey(item as { id?: unknown; properties?: Record<string, unknown> }).slice(0, 256),
+    updated: typeof props.updated === "string" ? props.updated : null,
   };
 }
 
-async function searchStac(params: ValidatedSearch): Promise<StacItem[]> {
+async function searchStac(params: ValidatedSearch): Promise<SearchResult> {
   const payload: Record<string, unknown> = {
     collections: [params.collection],
     bbox: params.bbox,
     limit: params.max_items,
+    sortby: DEFAULT_SORTBY, // newest first, ties by id: the same query returns the same first items
   };
   if (params.datetime) payload.datetime = params.datetime;
 
@@ -300,17 +348,18 @@ async function searchStac(params: ValidatedSearch): Promise<StacItem[]> {
     throw new Error(`STAC search failed: ${res.status}`);
   }
 
-  const data = (await res.json()) as { features?: unknown };
+  const data = (await res.json()) as { features?: unknown; numberMatched?: unknown; context?: { matched?: unknown } };
   if (!data || !Array.isArray(data.features)) {
     throw new HttpError(502, "STAC catalog returned invalid response");
   }
 
   const out: StacItem[] = [];
   for (const f of data.features.slice(0, params.max_items)) {
-    const item = stripStacItem(f);
+    const item = await stripStacItem(f);
     if (item) out.push(item);
   }
-  return out;
+  const m = Number(data.numberMatched ?? data.context?.matched);
+  return { items: out, matched: Number.isFinite(m) ? m : null };
 }
 
 function footprintsGeoJSON(features: StacItem[]): GeoJSON.FeatureCollection {
@@ -331,16 +380,6 @@ function footprintsGeoJSON(features: StacItem[]): GeoJSON.FeatureCollection {
   return { type: "FeatureCollection", features: out };
 }
 
-function inputIds(features: StacItem[]): string[] {
-  return features.map((f) => f.id).sort();
-}
-
-function sameIdSet(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
-  return true;
-}
-
 async function getReceipt(env: Env, runId: string): Promise<Record<string, unknown> | null> {
   const res = await supabaseFetch(
     env,
@@ -351,67 +390,56 @@ async function getReceipt(env: Env, runId: string): Promise<Record<string, unkno
   return rows[0]?.receipt ?? null;
 }
 
-function receiptIds(receipt: Record<string, unknown> | null): string[] {
-  return ((receipt?.input_assets as { id: string }[]) || []).map((a) => a.id).sort();
-}
+const RUN_COLUMNS =
+  "id,created_at,catalog_url,collection,bbox,max_items,input_count,output_path,output_checksum,reused_from_run_id,status,search_params";
 
-function diffIds(prev: string[], curr: string[]) {
-  const p = new Set(prev);
-  const c = new Set(curr);
-  const added = curr.filter((id) => !p.has(id));
-  const removed = prev.filter((id) => !c.has(id));
-  const unchanged = curr.filter((id) => p.has(id));
-  return { added, removed, unchanged };
-}
-
-async function findReusableRun(
-  env: Env,
-  catalog_url: string,
-  collection: string,
-  checksum: string,
-  ids: string[]
-): Promise<{ id: string; output_path: string } | null> {
-  const q =
-    `runs?select=id,output_path,output_checksum,status` +
-    `&catalog_url=eq.${encodeURIComponent(catalog_url)}` +
-    `&collection=eq.${encodeURIComponent(collection)}` +
-    `&output_checksum=eq.${encodeURIComponent(checksum)}` +
-    `&status=in.(complete,reused)` +
-    `&order=created_at.desc&limit=5`;
-  const res = await supabaseFetch(env, q);
+/**
+ * Runs of the same query, newest first. Older runs did not store a query key, so candidates of the
+ * same catalog and collection are loaded and their key is recomputed from their search parameters.
+ */
+async function runsOfQuery(env: Env, catalog_url: string, collection: string, key: string): Promise<StoredRun[]> {
+  const res = await supabaseFetch(
+    env,
+    `runs?select=${RUN_COLUMNS}` +
+      `&catalog_url=eq.${encodeURIComponent(catalog_url)}` +
+      `&collection=eq.${encodeURIComponent(collection)}` +
+      `&order=created_at.desc&limit=${maxRuns(env)}`
+  );
   if (!res.ok) throw new HttpError(502, "Failed to query prior runs");
-  const rows = (await res.json()) as {
-    id: string;
-    output_path?: string | null;
-    output_checksum?: string | null;
-  }[];
-
-  for (const row of rows) {
-    if (!row.output_path) continue;
-    const prefix = `${normalizeUrl(env.SUPABASE_URL)}/storage/v1/object/public/outputs/`;
-    if (!String(row.output_path).startsWith(prefix)) continue;
-    const prevReceipt = await getReceipt(env, row.id);
-    if (sameIdSet(receiptIds(prevReceipt), ids)) {
-      return { id: row.id, output_path: String(row.output_path) };
-    }
-  }
-  return null;
+  const rows = (await res.json()) as StoredRun[];
+  const out: StoredRun[] = [];
+  for (const r of rows) if ((await runQueryKey(r)) === key) out.push(r);
+  return out;
 }
 
-async function previousScopedRunId(
-  env: Env,
-  catalog_url: string,
-  collection: string
-): Promise<string | null> {
-  const q =
-    `runs?select=id` +
-    `&catalog_url=eq.${encodeURIComponent(catalog_url)}` +
-    `&collection=eq.${encodeURIComponent(collection)}` +
-    `&order=created_at.desc&limit=1`;
-  const res = await supabaseFetch(env, q);
-  if (!res.ok) return null;
-  const rows = (await res.json()) as { id: string }[];
-  return rows[0]?.id ?? null;
+/** Label removed ids: still in the catalog (fell out of the first max_items) or no longer there. */
+async function classifyRemoved(params: ValidatedSearch, diff: InputDiff, limit = 20): Promise<void> {
+  await Promise.all(
+    diff.removed.slice(0, limit).map(async (id) => {
+      let reason: RemovedReason = "unknown";
+      try {
+        const r = await fetch(
+          `${params.catalog_url}/collections/${encodeURIComponent(params.collection)}/items/${encodeURIComponent(id)}`,
+          { headers: { Accept: "application/geo+json" }, signal: AbortSignal.timeout(8_000) }
+        );
+        reason = r.status === 200 ? "outside_window" : r.status === 404 ? "gone" : "unknown";
+      } catch {
+        reason = "unknown";
+      }
+      diff.removed_reason[id] = reason;
+    })
+  );
+}
+
+async function loadFootprints(env: Env, run: StoredRun): Promise<GeoJSON.FeatureCollection | null> {
+  const url = resolveFootprintsFetchUrl(env, run.id, run.output_path, run.reused_from_run_id ?? null);
+  if (!url) return null;
+  try {
+    const r = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+    return r.ok ? ((await r.json()) as GeoJSON.FeatureCollection) : null;
+  } catch {
+    return null;
+  }
 }
 
 async function markRunFailed(env: Env, runId: string): Promise<void> {
@@ -744,13 +772,16 @@ async function handleSearch(req: Request, env: Env, origin: string | null): Prom
 
   const body = await parseJsonBody<SearchBody>(req);
   const params = validateSearchBody(body, env);
-  const features = await searchStac(params);
+  const { items: features, matched } = await searchStac(params);
   return json(
     {
       catalog_url: params.catalog_url,
       collection: params.collection,
       bbox: params.bbox,
       max_items: params.max_items,
+      datetime: params.datetime,
+      query_key: await queryKey(params),
+      matched,
       count: features.length,
       features,
     },
@@ -776,31 +807,46 @@ async function handleCreateRun(req: Request, env: Env, origin: string | null): P
   const body = await parseJsonBody<SearchBody>(req);
   const params = validateSearchBody(body, env);
 
-  const features = await searchStac(params);
-  const ids = inputIds(features);
-  const footprints = footprintsGeoJSON(features);
-  const footprintsText = JSON.stringify(footprints);
-  const checksum = await sha256Hex(new TextEncoder().encode(footprintsText));
+  const { items: features, matched } = await searchStac(params);
+  if (!features.length) {
+    return json({ error: "No scenes match this search, so no run was stored. Try a larger area or a wider date range.", empty: true }, 422, env, origin);
+  }
+  const key = await queryKey(params);
+  const current = new Map(features.map((f) => [f.id, f.content_hash] as [string, string]));
 
-  const reusable = await findReusableRun(
-    env,
-    params.catalog_url,
-    params.collection,
-    checksum,
-    ids
+  // previous run of the same query, and minimum recompute decided before any output is built
+  const prior = (await runsOfQuery(env, params.catalog_url, params.collection, key)).filter(
+    (r) => r.status === "complete" || r.status === "reused"
   );
+  const prev = prior[0] ?? null;
+  const prevReceipt = prev ? await getReceipt(env, prev.id) : null;
+  const diff: InputDiff | null = prev ? diffInputs(receiptInputs(prevReceipt), current) : null;
+  if (diff && diff.removed.length) await classifyRemoved(params, diff);
 
-  let reused_from_run_id: string | null = reusable?.id ?? null;
-  let output_path = reusable?.output_path ?? "";
-  let status: "complete" | "reused" = reusable ? "reused" : "complete";
-
-  const prevId = await previousScopedRunId(env, params.catalog_url, params.collection);
-  let diff: { added: string[]; removed: string[]; unchanged: string[] } | null = null;
-  if (prevId) {
-    const prevReceipt = await getReceipt(env, prevId);
-    diff = diffIds(receiptIds(prevReceipt), ids);
+  const canReuse =
+    Boolean(prev && diff && isIdentical(diff) && prev.output_path && prev.output_checksum) &&
+    String(prev!.output_path).startsWith(trustedOutputsPrefix(env));
+  const reused_from_run_id: string | null = canReuse ? prev!.reused_from_run_id || prev!.id : null;
+  const status: "complete" | "reused" = canReuse ? "reused" : "complete";
+  let output_path = canReuse ? String(prev!.output_path) : "";
+  let checksum = canReuse ? String(prev!.output_checksum) : "";
+  let footprints: GeoJSON.FeatureCollection | null = null;
+  let footprintsText = "";
+  if (!canReuse) {
+    footprints = footprintsGeoJSON(features);
+    footprintsText = JSON.stringify(footprints);
+    checksum = await sha256Hex(new TextEncoder().encode(footprintsText));
   }
 
+  const search_params = {
+    bbox: params.bbox,
+    collection: params.collection,
+    max_items: params.max_items,
+    datetime: params.datetime,
+    sortby: DEFAULT_SORTBY,
+    query_key: key,
+    matched,
+  };
   const runInsert = await supabaseFetch(env, "runs", {
     method: "POST",
     body: JSON.stringify({
@@ -813,12 +859,7 @@ async function handleCreateRun(req: Request, env: Env, origin: string | null): P
       output_path: output_path || null,
       reused_from_run_id,
       status,
-      search_params: {
-        bbox: params.bbox,
-        collection: params.collection,
-        max_items: params.max_items,
-        datetime: params.datetime,
-      },
+      search_params,
     }),
   });
   if (!runInsert.ok) {
@@ -827,7 +868,7 @@ async function handleCreateRun(req: Request, env: Env, origin: string | null): P
   const [run] = (await runInsert.json()) as { id: string }[];
 
   try {
-    if (status !== "reused") {
+    if (!canReuse) {
       const objectPath = footprintsObjectPath(run.id);
       await supabaseStorageUpload(env, objectPath, footprintsText, "application/geo+json");
       output_path = publicStorageUrl(env, objectPath);
@@ -837,23 +878,23 @@ async function handleCreateRun(req: Request, env: Env, origin: string | null): P
         body: JSON.stringify({ output_path }),
       });
       if (!patch.ok) throw new Error("Failed to patch output_path");
+    } else {
+      footprints = prev ? await loadFootprints(env, prev) : null;
     }
 
     const receipt = {
       run_id: run.id,
       timestamp: new Date().toISOString(),
       catalog_url: params.catalog_url,
-      search_params: {
-        bbox: params.bbox,
-        collection: params.collection,
-        max_items: params.max_items,
-        datetime: params.datetime,
-      },
+      search_params,
       input_assets: features.map((f) => ({
         id: f.id,
         href:
           f.links?.find((l) => l.rel === "self")?.href ||
           `${params.catalog_url}/collections/${params.collection}/items/${encodeURIComponent(f.id)}`,
+        content_hash: f.content_hash,
+        scene_key: f.scene_key,
+        ...(f.updated ? { updated: f.updated } : {}),
       })),
       transform_steps: [
         {
@@ -879,6 +920,8 @@ async function handleCreateRun(req: Request, env: Env, origin: string | null): P
         ],
       },
       reused_from_run_id,
+      compared_with_run_id: prev?.id ?? null,
+      diff,
     };
 
     const receiptIns = await supabaseFetch(env, "lineage_receipts", {
@@ -909,10 +952,11 @@ async function handleCreateRun(req: Request, env: Env, origin: string | null): P
           output_path,
           output_checksum: checksum,
           reused_from_run_id,
+          search_params,
         },
         receipt,
         footprints,
-        diff,
+        diff: diff ? { ...diff, compared_with_run_id: prev!.id } : null,
       },
       201,
       env,
@@ -1209,22 +1253,23 @@ async function handleGetRun(env: Env, id: string, origin: string | null): Promis
     }
   }
 
-  let diff = null;
-  const catalog_url = String(run.catalog_url || "");
-  const collection = String(run.collection || "");
-  const listRes = await supabaseFetch(
-    env,
-    `runs?select=id` +
-      `&catalog_url=eq.${encodeURIComponent(catalog_url)}` +
-      `&collection=eq.${encodeURIComponent(collection)}` +
-      `&order=created_at.desc&limit=50`
-  );
-  if (listRes.ok) {
-    const all = (await listRes.json()) as { id: string }[];
-    const idx = all.findIndex((r) => r.id === id);
-    if (idx >= 0 && idx < all.length - 1) {
-      const prevReceipt = await getReceipt(env, all[idx + 1].id);
-      diff = diffIds(receiptIds(prevReceipt), receiptIds(receipt));
+  // the diff stored with the run (created by this version), or recomputed for older runs:
+  // previous run of the same query, never a run of another area or collection
+  let diff: (InputDiff & { compared_with_run_id: string }) | null = null;
+  const stored = receipt?.diff as InputDiff | null | undefined;
+  const comparedWith = receipt?.compared_with_run_id as string | null | undefined;
+  if (stored && comparedWith) {
+    diff = { ...stored, compared_with_run_id: comparedWith };
+  } else if (comparedWith === undefined) {
+    const key = await runQueryKey(run as unknown as StoredRun);
+    if (key) {
+      const same = await runsOfQuery(env, String(run.catalog_url || ""), String(run.collection || ""), key);
+      const idx = same.findIndex((r) => r.id === id);
+      const prev = idx >= 0 ? same[idx + 1] : undefined;
+      if (prev) {
+        const d = diffInputs(receiptInputs(await getReceipt(env, prev.id)), receiptInputs(receipt));
+        diff = { ...d, compared_with_run_id: prev.id };
+      }
     }
   }
 

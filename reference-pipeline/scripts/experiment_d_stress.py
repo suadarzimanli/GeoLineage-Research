@@ -5,7 +5,7 @@ Run the pipeline N times with identical parameters and report:
   - Input-set stability (runs where input_assets matched previous) / (N-1)
   - Spurious diff rate (runs where diff reported added/removed despite same params) / (N-1)
 
-Usage (from geo-lineage folder):
+Usage (from the reference-pipeline folder):
   .venv\Scripts\python.exe -m scripts.experiment_d_stress --bbox -122.5 37.5 -122.2 37.8
   .venv\Scripts\python.exe -m scripts.experiment_d_stress --bbox -122.5 37.5 -122.2 37.8 --n 20
 """

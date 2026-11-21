@@ -1,0 +1,138 @@
+{
+ "cities": [
+  "Zurich",
+  "Lodz",
+  "London",
+  "Warsaw",
+  "Paris",
+  "Madrid",
+  "Rome",
+  "Stockholm",
+  "Athens",
+  "Cairo",
+  "Nairobi",
+  "Lagos",
+  "Cape Town",
+  "Mumbai",
+  "Tokyo",
+  "Sydney",
+  "Sao Paulo",
+  "Mexico City",
+  "Toronto",
+  "Los Angeles"
+ ],
+ "period": "2025",
+ "n": 10,
+ "generated": "2026-11-21T18:44:43Z",
+ "e4_identity": {
+  "earthsearch_items": 4163,
+  "planetary_items": 4157,
+  "earthsearch_unique_scene_keys": 4163,
+  "planetary_unique_scene_keys": 4157,
+  "matched_by_product_uri": 4140,
+  "share_of_earthsearch_matched": 99.4475138121547,
+  "matched_with_equal_ids": 0,
+  "datetime_diff_seconds_median": 407.9115,
+  "datetime_diff_seconds_max": 2033.255,
+  "matched_by_sensing_key": 4107,
+  "share_of_earthsearch_matched_by_sensing": 99.44309927360774,
+  "sensing_matches_with_different_uri": 0,
+  "duplicate_sensings": {
+   "earthsearch": 33,
+   "planetary": 50
+  },
+  "regenerated": {
+   "earthsearch": [
+    33,
+    33
+   ],
+   "planetary": [
+    50,
+    50
+   ]
+  },
+  "baselines": {
+   "earthsearch": {
+    "05.11": 4163
+   },
+   "planetary": {
+    "05.11": 4157
+   }
+  }
+ },
+ "e3_mutability": {
+  "items_with_timestamps": 4163,
+  "updated_after_creation_share": {
+   "1h": 0.40835935623348546,
+   "1d": 0.33629594042757627,
+   "30d": 0.0
+  },
+  "median_days_when_later_than_1d": 1.2626122164351852,
+  "fixed_period_reruns": 760,
+  "fixed_period_reruns_with_updated_inputs": 0,
+  "fixed_period_cities_affected": 0,
+  "updated_months": {
+   "2025-01": 219,
+   "2025-02": 222,
+   "2025-03": 392,
+   "2025-04": 368,
+   "2025-05": 382,
+   "2025-06": 359,
+   "2025-07": 382,
+   "2025-08": 370,
+   "2025-09": 363,
+   "2025-10": 383,
+   "2025-11": 362,
+   "2025-12": 360,
+   "2026-02": 1
+  }
+ },
+ "e5_reuse": {
+  "latest_10": {
+   "reuse_share_by_ids": 0.40540540540540543,
+   "reruns": 740
+  },
+  "rolling_30_days": {
+   "reuse_share_by_ids": 0.0,
+   "reruns": 740
+  },
+  "fixed_period_march": {
+   "reuse_share_by_ids": 100.0,
+   "reruns": 740
+  }
+ },
+ "e2_window": {
+  "weekly_diffs": 1020,
+  "mean_added": 3.734313725490196,
+  "mean_removed": 3.577450980392157,
+  "share_with_removed": 92.45098039215686,
+  "share_identical": 0.39215686274509803,
+  "removed_total": 3649,
+  "removed_sample": 60,
+  "removed_sample_still_in_catalog": 60,
+  "removed_sample_absent": 0,
+  "removed_sample_errors": 0,
+  "rebuild_checks": 12,
+  "rebuild_matches_live": 12
+ },
+ "e1_repeatability": {
+  "earthsearch": {
+   "cities": 20,
+   "repeats": 3,
+   "sorted_same_order": 20,
+   "default_same_order": 20,
+   "default_same_set": 20,
+   "default_equals_sorted": 20,
+   "default_set_equals_sorted": 20
+  },
+  "planetary": {
+   "cities": 20,
+   "repeats": 3,
+   "sorted_same_order": 20,
+   "default_same_order": 20,
+   "default_same_set": 20,
+   "default_equals_sorted": 9,
+   "default_set_equals_sorted": 19
+  }
+ }
+}

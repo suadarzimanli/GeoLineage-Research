@@ -1,52 +1,80 @@
-"""Diff current run's inputs vs previous run (what changed)."""
+"""Diff a run's inputs against the previous run of the *same query* (what changed, and why)."""
 
+from __future__ import annotations
+
+from dataclasses import dataclass, field
 from pathlib import Path
-from dataclasses import dataclass
-from .schema import LineageRun, InputAsset
-from .store import load_run, DEFAULT_LINEAGE_DIR
+from typing import Callable
+
+from .identity import InputDiff, classify_removed, diff_inputs
+from .schema import InputAsset, LineageRun
+from .store import DEFAULT_LINEAGE_DIR, get_previous_run_for_query, load_run, run_query_key
 
 
 @dataclass
 class DiffResult:
-    """What changed between previous and current run (by input assets)."""
+    """What changed between the previous run of the same query and the current run."""
     previous_run_id: str | None
     added: list[InputAsset]
     removed: list[InputAsset]
     unchanged: list[InputAsset]
+    changed: list[InputAsset] = field(default_factory=list)
+    removed_reason: dict[str, str] = field(default_factory=dict)
+
+    def to_dict(self) -> dict:
+        return {
+            "previous_run_id": self.previous_run_id,
+            "added": [a.id for a in self.added],
+            "removed": [a.id for a in self.removed],
+            "changed": [a.id for a in self.changed],
+            "unchanged": [a.id for a in self.unchanged],
+            "removed_reason": self.removed_reason,
+        }
 
 
-def _asset_key(a: InputAsset) -> tuple[str, str]:
-    return (a.id, a.checksum or "")
+def _identity_map(assets: list[InputAsset]) -> dict[str, str | None]:
+    return {a.id: a.identity for a in assets}
 
 
 def input_assets_equal(a_list: list[InputAsset], b_list: list[InputAsset]) -> bool:
-    """True if the two lists contain the same set of inputs (by id and checksum)."""
-    return {_asset_key(x) for x in a_list} == {_asset_key(x) for x in b_list}
+    """True if both lists hold the same items with the same content (id + content hash or checksum)."""
+    return diff_inputs(_identity_map(a_list), _identity_map(b_list)).identical
 
 
 def diff_since_last_run(
     current_run: LineageRun,
     lineage_dir: Path | None = None,
+    still_in_catalog: Callable[[str], bool | None] | None = None,
 ) -> DiffResult:
     """
-    Compare current_run's input_assets to the previous run's (run with next-oldest
-    timestamp). Returns added, removed, and unchanged assets.
+    Compare the current run with the previous run of the same query. With `still_in_catalog`,
+    removed items are labelled 'outside_window' (still in the catalog) or 'gone'.
     """
-    from .store import get_previous_run_id
     lineage_dir = lineage_dir or DEFAULT_LINEAGE_DIR
-    prev_run_id = get_previous_run_id(current_run.run_id, lineage_dir)
-    prev_run = load_run(prev_run_id, lineage_dir) if prev_run_id else None
+    prev_id = get_previous_run_for_query(current_run.run_id, run_query_key(current_run), lineage_dir)
+    prev = load_run(prev_id, lineage_dir) if prev_id else None
+    if prev is None:
+        return DiffResult(previous_run_id=None, added=list(current_run.input_assets), removed=[], unchanged=[])
 
-    current_set = {_asset_key(a): a for a in current_run.input_assets}
-    previous_set = {_asset_key(a): a for a in (prev_run.input_assets if prev_run else [])}
-
-    added = [current_set[k] for k in current_set if k not in previous_set]
-    removed = [previous_set[k] for k in previous_set if k not in current_set]
-    unchanged = [current_set[k] for k in current_set if k in previous_set]
-
+    d: InputDiff = diff_inputs(_identity_map(prev.input_assets), _identity_map(current_run.input_assets))
+    if still_in_catalog is not None and d.removed:
+        classify_removed(d, still_in_catalog)
+    cur = {a.id: a for a in current_run.input_assets}
+    old = {a.id: a for a in prev.input_assets}
     return DiffResult(
-        previous_run_id=prev_run_id,
-        added=added,
-        removed=removed,
-        unchanged=unchanged,
+        previous_run_id=prev_id,
+        added=[cur[i] for i in d.added],
+        removed=[old[i] for i in d.removed],
+        unchanged=[cur[i] for i in d.unchanged],
+        changed=[cur[i] for i in d.changed],
+        removed_reason=d.removed_reason,
     )
+
+
+def diff_runs(previous: LineageRun, current: LineageRun) -> DiffResult:
+    """Explicit comparison of any two runs (e.g. the same area with a different max_items)."""
+    d = diff_inputs(_identity_map(previous.input_assets), _identity_map(current.input_assets))
+    cur = {a.id: a for a in current.input_assets}
+    old = {a.id: a for a in previous.input_assets}
+    return DiffResult(previous_run_id=previous.run_id, added=[cur[i] for i in d.added], removed=[old[i] for i in d.removed],
+                      unchanged=[cur[i] for i in d.unchanged], changed=[cur[i] for i in d.changed])

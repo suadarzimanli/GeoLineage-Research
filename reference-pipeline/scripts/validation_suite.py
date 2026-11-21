@@ -2,7 +2,7 @@ r"""
 Automated validation suite for GeoLineage.
 Runs the main logic checks and prints a PASS/FAIL report.
 
-Usage (from geo-lineage folder):
+Usage (from the reference-pipeline folder):
   .venv\Scripts\python.exe -m scripts.validation_suite
   .venv\Scripts\python.exe -m scripts.validation_suite --bbox -122.5 37.5 -122.2 37.8
 """
@@ -79,9 +79,13 @@ def test_2_reuse(bbox):
 
 
 def test_3_diff(bbox):
-    """Test 3: Run with more items -> new output, diff shows added."""
+    """Test 3: A different query (more items) is a new query: no automatic diff, new output;
+    an explicit comparison with the 5-item run shows the 5 shared items and the added ones."""
     from scripts.run_pipeline import run_pipeline
-    from lineage.diff import diff_since_last_run
+    from lineage.diff import diff_runs, diff_since_last_run
+    from lineage.store import get_latest_run_id, load_run
+
+    five = load_run(get_latest_run_id(VAL_LINEAGE), VAL_LINEAGE)
 
     run, run_id, reused = run_pipeline(
         bbox=bbox,
@@ -93,12 +97,12 @@ def test_3_diff(bbox):
     )
     if reused:
         return False, "Expected new output when max_items increased"
-    diff = diff_since_last_run(run, VAL_LINEAGE)
-    if diff.previous_run_id is None:
-        return False, "Expected a previous run for diff"
-    if len(diff.added) < 1 and len(diff.unchanged) < 1:
-        return False, f"Diff should show added or unchanged; got added={len(diff.added)}, unchanged={len(diff.unchanged)}"
-    return True, f"Diff: added={len(diff.added)}, removed={len(diff.removed)}, unchanged={len(diff.unchanged)}"
+    if diff_since_last_run(run, VAL_LINEAGE).previous_run_id is not None:
+        return False, "A different query must not be diffed automatically"
+    diff = diff_runs(five, run)
+    if len(diff.unchanged) != len(five.input_assets) or diff.removed:
+        return False, f"Expected the 5 items to be kept; got unchanged={len(diff.unchanged)}, removed={len(diff.removed)}"
+    return True, f"Explicit diff vs 5-item run: added={len(diff.added)}, unchanged={len(diff.unchanged)}, removed=0"
 
 
 def test_4_lineage_structure():
@@ -129,6 +133,10 @@ def main():
     p.add_argument("--bbox", type=float, nargs=4, default=DEFAULT_BBOX, metavar=("minx", "miny", "maxx", "maxy"))
     args = p.parse_args()
     bbox = tuple(args.bbox)
+
+    import shutil
+    for d in (VAL_OUTPUTS, VAL_LINEAGE):  # start clean so earlier sessions cannot change the outcome
+        shutil.rmtree(d, ignore_errors=True)
 
     print("=" * 60)
     print("GeoLineage Validation Suite")

@@ -3,7 +3,7 @@ Run the pipeline for multiple bboxes (multi-region). Enables incremental recompu
 when re-running the same list of bboxes, only regions whose input set changed are recomputed;
 others reuse the previous run for that region (per-region reuse).
 
-Usage (from geo-lineage folder):
+Usage (from the reference-pipeline folder):
   python -m scripts.run_pipeline_multi_bbox --bbox -122.5 37.5 -122.2 37.8 --bbox -122.4 37.6 -122.1 37.9 --max-items 5
   python -m scripts.run_pipeline_multi_bbox --bbox-file bboxes.json
 """

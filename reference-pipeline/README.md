@@ -29,8 +29,10 @@ No external lineage database is required; lineage lives as JSON files next to th
 | Feature | Description |
 |--------|--------------|
 | **Lineage every run** | Each run produces a lineage JSON with run_id, timestamp, catalog_url, search_params, input_assets, transform_steps, output_assets. |
-| **Diff since previous run** | After each run, the pipeline compares this run’s inputs to the previous run’s and reports Added / Removed / Unchanged. |
-| **Minimum recompute** | If the current run’s input set equals the latest run’s, the pipeline reuses the previous output (no new parquet) and still writes a new lineage record with `reused_from_run_id`. |
+| **Query-scoped diff** | Each run is compared with the previous run of the *same query* (catalog, collection, bbox, datetime, max_items, sort order → `query_key`) and reports Added / Removed / Changed / Unchanged. Removed items are labelled *outside the window* (still in the catalog) or *gone*. |
+| **Content identity** | Every input has a `content_hash` of its geometry, properties and asset hrefs, and a catalog-independent `scene_key` (Sentinel-2 product URI). Same id + new hash = changed in place. |
+| **Minimum recompute** | If the inputs (ids and content hashes) equal those of the previous run of the same query, the output is reused **before** any transform runs; a new lineage record with `reused_from_run_id` is still written. |
+| **Deterministic queries** | Searches are sorted newest first, ties by id; dates are normalised to RFC 3339; the catalog's match count is recorded. |
 | **Catalog-agnostic** | Works with any STAC 1.x–compliant API. Tested with Earth Search (Element84) and Copernicus Data Space Ecosystem. |
 | **Lineage DAG** | Each run’s lineage includes a small DAG (input_set → transform → output_asset) for queryable provenance. |
 | **“What produced this?”** | Query by output path or run ID: `python -m scripts.query_lineage --run-id <id>` or `--output <path>`. |
@@ -44,14 +46,14 @@ No external lineage database is required; lineage lives as JSON files next to th
 ### Prerequisites
 
 - **Python 3.10+**
-- Clone or download the repo and `cd` into the `geo-lineage` folder.
+- Clone or download the repo and `cd` into the `reference-pipeline` folder.
 
 ### 1. Install
 
 **Option A — venv (recommended):**
 
 ```bash
-cd geo-lineage
+cd reference-pipeline
 python -m venv .venv
 # Windows (if script execution is allowed):
 .venv\Scripts\activate
@@ -63,7 +65,7 @@ pip install -r requirements.txt
 **Option B — editable package:**
 
 ```bash
-cd geo-lineage
+cd reference-pipeline
 pip install -e .
 ```
 
@@ -71,7 +73,7 @@ pip install -e .
 
 ### 2. Run the pipeline (CLI)
 
-From the `geo-lineage` folder:
+From the `reference-pipeline` folder:
 
 ```bash
 # With venv activated:
@@ -123,11 +125,13 @@ You can override catalog URL and collection in the CLI (`--catalog`, `--collecti
 
 ## Pipeline design
 
-1. **Ingest** — STAC search by bbox, collection, datetime (optional), max_items. Returns a list of Items; for each we record id, href (self link or first asset), and checksum if provided by the catalog.
-2. **Minimum recompute** — Compare current run’s input set (by id and checksum) to the latest run’s. If equal, reuse the latest run’s output path, set `reused_from_run_id`, skip transform, and write a new lineage record pointing at the same output.
+1. **Ingest** — STAC search by bbox, collection, datetime (optional, normalised to RFC 3339), max_items, sorted newest first with ties by id. For each item we record id, href, the catalog's checksum if any, a `content_hash`, a `scene_key` and the `updated` time.
+2. **Minimum recompute** — Find the previous run with the same `query_key`. If its inputs equal the current ones (ids and content hashes), reuse its output, set `reused_from_run_id`, and skip the transform.
 3. **Transform** — If not reusing: extract footprint geometry, id, datetime from each Item; build a GeoDataFrame; write GeoParquet; compute SHA-256 of the file.
-4. **Lineage** — Write a JSON record for this run: run_id, timestamp, catalog_url, search_params, input_assets, transform_steps, output_assets (path, checksum, crs).
-5. **Diff** — Load the previous run’s lineage (by timestamp); compare input_assets; report Added, Removed, Unchanged.
+4. **Lineage** — Write a JSON record for this run: run_id, timestamp (microseconds), catalog_url, search_params (with `query_key`, `sortby`, `matched`), input_assets, transform_steps, output_assets (path, checksum, crs).
+5. **Diff** — Compare with the previous run of the same query: Added, Removed (with reason), Changed, Unchanged. Different queries are never compared automatically; `lineage.diff.diff_runs(a, b)` compares any two runs on purpose.
+
+The identity rules live in `lineage/identity.py` (standard library only). The hosted demo's Worker implements the same rules in `GeoLineageApp/worker/src/lineage.ts`; shared test vectors check that both compute identical keys.
 
 Output layout:
 
@@ -184,13 +188,27 @@ python -m scripts.run_pipeline --bbox -122.5 37.5 -122.2 37.8 --catalog https://
 
 ## Validation and testing
 
+### Offline unit tests
+
+```bash
+python -m unittest discover -s tests -t .     # 12 tests, no network
+```
+
+### STAC lineage study (paper, Section 5)
+
+```bash
+python -m study.collect        # 2025 Sentinel-2 L2A item lists, 20 cities, Earth Search + Planetary Computer -> study/data/
+python -m study.analyze        # E1–E5 (with a few live checks) -> study/results.json, study/results.md
+python -m study.make_figures   # -> ../Paper/figures/fig_*.pdf
+```
+
 ### Automated validation suite
 
 Runs four checks in dedicated dirs (`validation_outputs/`, `validation_lineage_runs/`) so your main runs are untouched:
 
 1. First run produces at least one output file and one lineage file.
 2. Second run with same parameters reuses the first run’s output.
-3. Third run with higher max_items produces new output and diff with added/unchanged.
+3. A run with higher max_items is a new query (no automatic diff); an explicit comparison with the 5-item run keeps all 5 items.
 4. Latest lineage has all required fields and non-empty output checksum.
 
 ```bash

@@ -7,7 +7,7 @@ Runs the pipeline for N bboxes in two passes:
 
 Reports: full_time, incremental_time, time_saved_ratio, reuse_count, recompute_count.
 
-Usage (from geo-lineage folder):
+Usage (from the reference-pipeline folder):
   python -m scripts.experiment_incremental_recompute
   python -m scripts.experiment_incremental_recompute --n 5
 """

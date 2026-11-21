@@ -1,7 +1,7 @@
 r"""
 Query lineage: answer "what produced this output?" (by output path or run_id).
 
-Usage (from geo-lineage folder):
+Usage (from the reference-pipeline folder):
   python -m scripts.query_lineage --run-id <run_id>
   python -m scripts.query_lineage --output <path_to_footprints.parquet>
   .venv\Scripts\python.exe -m scripts.query_lineage --run-id <run_id>

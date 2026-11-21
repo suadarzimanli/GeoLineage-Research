@@ -1,7 +1,7 @@
 """Lineage schema: run metadata, input/output assets, transform steps, and lineage DAG."""
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 import json
 import uuid
@@ -114,17 +114,36 @@ def build_dag_from_run(run: "LineageRun") -> LineageDAG:
 
 @dataclass
 class InputAsset:
-    """One input (STAC item or asset) used in the pipeline."""
+    """
+    One input (STAC item) used in the pipeline.
+      checksum      checksum published by the catalog for the item's first asset, if any
+      content_hash  hash of the item's geometry, properties and asset hrefs (lineage.identity)
+      scene_key     catalog-independent scene name (Sentinel-2 product URI, else id)
+      updated       the item's 'updated' property, if the catalog provides it
+    """
     id: str
     href: str
     checksum: str | None = None
+    content_hash: str | None = None
+    scene_key: str | None = None
+    updated: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {"id": self.id, "href": self.href, "checksum": self.checksum}
+        d: dict[str, Any] = {"id": self.id, "href": self.href, "checksum": self.checksum}
+        for k in ("content_hash", "scene_key", "updated"):
+            if getattr(self, k) is not None:
+                d[k] = getattr(self, k)
+        return d
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "InputAsset":
-        return cls(id=d["id"], href=d["href"], checksum=d.get("checksum"))
+        return cls(id=d["id"], href=d["href"], checksum=d.get("checksum"), content_hash=d.get("content_hash"),
+                   scene_key=d.get("scene_key"), updated=d.get("updated"))
+
+    @property
+    def identity(self) -> str | None:
+        """What must match for two inputs to count as the same content."""
+        return self.content_hash or self.checksum
 
 
 @dataclass
@@ -215,4 +234,4 @@ def new_run_id() -> str:
 
 
 def timestamp_iso() -> str:
-    return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")

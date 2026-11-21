@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+title: "GeoLineage: provenance for STAC-driven geospatial pipelines"
+message: "If you use this software, study or data, please cite it as below."
+type: software
+authors:
+  - family-names: Arzimanli
+    given-names: Suad
+    affiliation: "University of Łódź"
+version: 2.0.0
+date-released: 2026-11-21
+license: MIT
+repository-code: "https://github.com/suadarzimanli/GeoLineage-Research"
+url: "https://geolineage-research.pages.dev/"
+keywords:
+  - provenance
+  - lineage
+  - reproducibility
+  - STAC
+  - Earth observation
+abstract: >-
+  Lineage receipts, query-scoped diffs with reasons for every change, and reuse of
+  unchanged outputs for pipelines built on STAC catalogs, implemented as a Python
+  reference pipeline and a hosted Cloudflare/Supabase demo with identical identity
+  rules, plus a study of 8,320 Sentinel-2 items from Earth Search and Planetary
+  Computer on query stability, window churn, in-place updates, cross-catalog
+  identity and reuse.
